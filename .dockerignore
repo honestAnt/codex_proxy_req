@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+*.md
+.playwright-mcp
+develop-map
+dev-tasks
+postgres-data
+redis-data
+minio-data
+.DS_Store

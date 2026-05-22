@@ -1,0 +1,13 @@
+{
+  "name": "codex-proxy-req",
+  "version": "1.0.0",
+  "description": "Proxy server with configurable request body filtering and Electron config UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:ui": "node start-electron.js"
+  },
+  "dependencies": {
+    "electron": "^28.0.0"
+  }
+}

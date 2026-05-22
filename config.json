@@ -1,0 +1,9 @@
+{
+  "listenPath": "/v1/responses",
+  "targetUrl": "https://api.deepseek.com/chat/completions",
+  "filterParams": [
+    "tools",
+    "tool_choice"
+  ],
+  "enableInputTransform": true
+}

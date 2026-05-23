@@ -10,7 +10,8 @@ const defaults = {
   listenPath: '/v1/responses',
   targetUrl: 'https://api.deepseek.com/chat/completions',
   filterParams: ['tools', 'tool_choice'],
-  enableInputTransform: true
+  enableInputTransform: true,
+  modelOverride: ''
 };
 
 function loadConfig() {
@@ -36,6 +37,37 @@ function addLog(level, msg) {
   logBuffer.push(entry);
   if (logBuffer.length > MAX_LOGS) logBuffer.shift();
   console.log(`[${level}]`, msg);
+}
+
+function injectToolsIntoMessages(body, tools, toolChoice) {
+  if (!tools || !Array.isArray(tools) || tools.length === 0) return;
+
+  const parts = [];
+  for (const t of tools) {
+    if (t.type === 'function' && t.function) {
+      let desc = `- ${t.function.name}`;
+      if (t.function.description) desc += `: ${t.function.description}`;
+      if (t.function.parameters) desc += `\n  parameters: ${JSON.stringify(t.function.parameters)}`;
+      parts.push(desc);
+    }
+  }
+
+  if (parts.length === 0) return;
+
+  let toolMsg = 'Available functions:\n' + parts.join('\n');
+  if (toolChoice) {
+    toolMsg += `\n\nTool choice mode: ${toolChoice}`;
+  }
+  toolMsg += '\n\nWhen you need to use a function, respond with the function name and arguments in JSON format.';
+
+  if (!body.messages) body.messages = [];
+
+  const systemIdx = body.messages.findIndex(m => m.role === 'system');
+  if (systemIdx >= 0) {
+    body.messages[systemIdx].content = body.messages[systemIdx].content + '\n\n' + toolMsg;
+  } else {
+    body.messages.unshift({ role: 'system', content: toolMsg });
+  }
 }
 
 function transformInput(body) {
@@ -259,12 +291,23 @@ function handleProxy(req, res) {
     try {
       const parsed = JSON.parse(body);
       const filtered = { ...parsed };
+
+      // capture filtered params before deletion so we can inject them into messages
+      const capturedTools = config.filterParams.includes('tools') ? parsed.tools : null;
+      const capturedToolChoice = config.filterParams.includes('tool_choice') ? parsed.tool_choice : null;
+
       for (const p of config.filterParams) {
         delete filtered[p];
       }
 
       if (config.enableInputTransform) {
         transformInput(filtered);
+        injectToolsIntoMessages(filtered, capturedTools, capturedToolChoice);
+      }
+
+      if (config.modelOverride) {
+        addLog('info', `model override: "${parsed.model}" → "${config.modelOverride}"`);
+        filtered.model = config.modelOverride;
       }
 
       addLog('info', `original keys: [${Object.keys(parsed).join(', ')}] → filtered: [${Object.keys(filtered).join(', ')}]`);
@@ -487,6 +530,10 @@ button:hover{background:#b4befe}
 <div class="row">
 <div><label>Listen Path</label><input id="listenPath" placeholder="/v1/responses"><p class="hint">Path to match incoming requests</p></div>
 <div><label>Target URL</label><input id="targetUrl" placeholder="https://api.deepseek.com/chat/completions"><p class="hint">Where to forward requests</p></div>
+</div>
+<div class="row" style="margin-top:12px">
+<div><label>Model Override</label><input id="modelOverride" placeholder="e.g. deepseek-chat"><p class="hint">Replace model field in proxied requests (leave empty to pass through)</p></div>
+<div></div>
 </div></div>
 
 <div class="section">
@@ -529,14 +576,14 @@ let filterParams=[];
 function setStatus(ok,t){$('status').className='status '+(ok?'ok':'err');$('statusText').textContent=t}
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function render(){let h='';for(const p of filterParams)h+='<span class="tag">'+esc(p)+'<span class="rm" data-p="'+esc(p)+'">&times;</span></span>';$('filterTags').innerHTML=h}
-function updateCurl(){const b={model:'gpt-3.5-turbo',messages:[{role:'user',content:'hello'}]};for(const p of filterParams){if(p==='tools')b.tools=[{type:'function',function:{name:'test'}}];if(p==='tool_choice')b.tool_choice='none'}
-$('curlExample').value='curl -X POST http://localhost:${PORT}'+$('listenPath').value+' -H "Content-Type: application/json" -H "Authorization: Bearer <KEY>" -d \\''+JSON.stringify(b)+'\\''}
-async function load(){try{const r=await fetch('/api/config');const c=await r.json();$('listenPath').value=c.listenPath||'/v1/responses';$('targetUrl').value=c.targetUrl||'';filterParams=c.filterParams||[];$('enableInputTransform').checked=c.enableInputTransform!==false;render();updateCurl()}catch(e){setStatus(false,'Failed to load config: '+e.message)}}
-async function save(){const c={listenPath:$('listenPath').value.trim(),targetUrl:$('targetUrl').value.trim(),filterParams,enableInputTransform:$('enableInputTransform').checked};try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});const j=await r.json();if(j.success)setStatus(true,'Saved');else setStatus(false,'Failed')}catch(e){setStatus(false,'Error: '+e.message)}}
+function updateCurl(){const mo=$('modelOverride').value.trim();const b={model:mo||'gpt-3.5-turbo',messages:[{role:'user',content:'hello'}]};for(const p of filterParams){if(p==='tools')b.tools=[{type:'function',function:{name:'test'}}];if(p==='tool_choice')b.tool_choice='none'}
+let tip='';if(mo)tip='  # model will be overridden to: '+mo+'\\n';$('curlExample').value=tip+'curl -X POST http://localhost:${PORT}'+$('listenPath').value+' -H "Content-Type: application/json" -H "Authorization: Bearer <KEY>" -d \\''+JSON.stringify(b)+'\\''}
+async function load(){try{const r=await fetch('/api/config');const c=await r.json();$('listenPath').value=c.listenPath||'/v1/responses';$('targetUrl').value=c.targetUrl||'';$('modelOverride').value=c.modelOverride||'';filterParams=c.filterParams||[];$('enableInputTransform').checked=c.enableInputTransform!==false;render();updateCurl()}catch(e){setStatus(false,'Failed to load config: '+e.message)}}
+async function save(){const c={listenPath:$('listenPath').value.trim(),targetUrl:$('targetUrl').value.trim(),modelOverride:$('modelOverride').value.trim(),filterParams,enableInputTransform:$('enableInputTransform').checked};try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});const j=await r.json();if(j.success)setStatus(true,'Saved');else setStatus(false,'Failed')}catch(e){setStatus(false,'Error: '+e.message)}}
 function addParam(){const v=$('newParam').value.trim();if(v&&!filterParams.includes(v)){filterParams.push(v);$('newParam').value='';render();updateCurl()}}
 $('addParamBtn').onclick=addParam;$('newParam').onkeydown=e=>{if(e.key==='Enter')addParam()};
 $('filterTags').onclick=e=>{if(e.target.classList.contains('rm')){filterParams=filterParams.filter(p=>p!==e.target.dataset.p);render();updateCurl()}};
-$('listenPath').oninput=updateCurl;$('targetUrl').oninput=updateCurl;$('saveBtn').onclick=save;
+$('listenPath').oninput=updateCurl;$('targetUrl').oninput=updateCurl;$('modelOverride').oninput=updateCurl;$('saveBtn').onclick=save;
 load();
 
 // Log viewer

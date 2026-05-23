@@ -51,5 +51,8 @@ npm start
 
 ### 2. 重启codex
 ```bash
+
+echo "sk_xxxx" | codex login --with-api-key
+
 codex reset
 ```

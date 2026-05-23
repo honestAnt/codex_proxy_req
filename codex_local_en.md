@@ -53,5 +53,6 @@ npm start
 
 ### 2. Restart Codex
 ```bash
+echo "sk_xxxx" | codex login --with-api-key
 codex reset
 ```
